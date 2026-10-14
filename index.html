@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>皮肤健康检测 · 人脸皮肤分析报告</title>
+<meta name="description" content="使用摄像头在本机分析面部皮肤状态，生成包含泛红、油光、毛孔、色斑、细纹等维度的皮肤健康报告。画面不离开浏览器，零上传、零依赖。">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%234ea8ff'/><circle cx='16' cy='16' r='6' fill='%23071020'/></svg>">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ======================= 顶栏 ======================= -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/>
+          <path d="M12 3.5V6M12 18v2.5M3.5 12H6M18 12h2.5"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>皮肤健康检测</h1>
+        <p>摄像头人脸分析 · 生成皮肤健康报告</p>
+      </div>
+    </div>
+    <span class="privacy-badge">
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>
+      </svg>
+      画面不上传 · 全部本地处理
+    </span>
+  </header>
+
+  <!-- ======================= 1. 欢迎 ======================= -->
+  <section class="step active" id="step-welcome">
+    <div class="card hero">
+      <h2>用摄像头，给你的皮肤做一次体检</h2>
+      <p>
+        授权摄像头后，我们会在你的浏览器里逐像素分析面部图像，
+        从<strong style="color:#9dc9ff">泛红炎症、水油平衡、毛孔纹理、色素色斑、细纹紧致、暗沉光泽</strong>
+        六个维度生成一份可导出的皮肤健康报告。
+      </p>
+
+      <div class="feature-grid">
+        <div class="feature">
+          <div class="icon"><svg viewBox="0 0 24 24" stroke-linecap="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></div>
+          <h4>完全本地计算</h4>
+          <p>使用 Canvas 与 CIE-Lab 色彩分析在你的设备上完成推理，视频帧和照片不会发送到任何服务器。</p>
+        </div>
+        <div class="feature">
+          <div class="icon"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 10h16M4 15h16M10 4v16M15 4v16"/></svg></div>
+          <h4>12 项可解释指标</h4>
+          <p>不只给一个分数，每一项都展示实际测量值，你可以看到分数是怎么算出来的。</p>
+        </div>
+        <div class="feature">
+          <div class="icon"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></div>
+          <h4>热力图定位</h4>
+          <p>把泛红、油光、色斑、纹路标在脸上，明确知道问题出在哪个区域。</p>
+        </div>
+        <div class="feature">
+          <div class="icon"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5"/><path d="M6 11l6-6 6 6"/></svg></div>
+          <h4>趋势追踪</h4>
+          <p>检测记录保存在本机，复测后可以看到分数变化，判断护肤方案是否真的有效。</p>
+        </div>
+      </div>
+
+      <ul class="checklist">
+        <li>
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <span><b>光线</b>：正面均匀的自然光或白光，避免顶光、侧光与彩色灯（会影响颜色类指标）</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <span><b>面部</b>：素颜或仅基础护肤，头发拨开露出额头，摘掉眼镜与口罩</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <span><b>姿势</b>：正对镜头，脸占画面 1/3 以上，检测过程中保持不动约 5 秒</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <span><b>复制性</b>：固定设备、光线与时间段，趋势才有意义</span>
+        </li>
+      </ul>
+
+      <button class="btn" id="btn-start">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v12H4z"/><circle cx="12" cy="13" r="3.4"/></svg>
+        授权摄像头并开始检测
+      </button>
+
+      <p id="history-note" style="margin-top:18px;font-size:12.5px;color:#64748b"></p>
+
+      <div class="notice" id="secure-warn" style="display:none">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9.5 17h-19L12 3z"/><path d="M12 9v5M12 17.5v.5"/></svg>
+        <div>
+          当前页面不是安全上下文，浏览器会拒绝摄像头请求。
+          如果你是通过局域网地址（http://10.x.x.x 之类）在手机或别的电脑上打开本页，
+          请先到 <a href="/install" style="color:#9dc9ff"><b>安装证书引导页</b></a>
+          装好证书，再用 <b style="color:#e8eefc">https://本机IP:8443/</b> 访问。
+          本机使用请通过 <b style="color:#e8eefc">http://127.0.0.1</b> 打开
+          （在项目目录执行 <code style="color:#9dc9ff">node serve.mjs</code> 启动服务）。
+        </div>
+      </div>
+
+      <div class="notice" style="background:rgba(78,168,255,.06);border-color:rgba(78,168,255,.2)">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" style="stroke:#4ea8ff"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg>
+        <div>
+          本工具测量的是<b style="color:#e8eefc">照片上的表面光学特征</b>，属于护肤参考工具，
+          <b style="color:#e8eefc">不是医疗器械，不能用于诊断疾病</b>。皮肤有持续异常请就医。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 2. 摄像头 ======================= -->
+  <section class="step" id="step-camera">
+    <div class="camera-layout">
+      <div>
+        <div class="viewport" id="viewport">
+          <video id="video" playsinline muted autoplay></video>
+          <canvas class="overlay" id="overlay"></canvas>
+          <div class="guide-frame" id="guide-frame"></div>
+          <div class="countdown" id="countdown"></div>
+          <div class="flash" id="flash"></div>
+        </div>
+
+        <div class="actions" style="margin-top:14px;padding:0">
+          <button class="btn" id="btn-capture">
+            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/></svg>
+            开始分析
+          </button>
+          <button class="btn ghost" id="btn-stop">
+            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            关闭摄像头
+          </button>
+        </div>
+
+        <div class="card" id="quality-panel" style="display:none;margin-top:14px;padding:18px 20px">
+          <h3 style="margin:0 0 10px;font-size:14px;color:#ffd7dd">采样质量未达标</h3>
+          <ul id="quality-list" style="margin:0 0 14px;padding-left:20px;font-size:13px;color:#93a4c4;line-height:1.7"></ul>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn sm ghost" id="btn-override">仍然用当前画面生成报告</button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="guide-panel">
+        <div class="card panel-block">
+          <h3>实时检测</h3>
+          <div class="status-list">
+            <div class="status-item" id="st-face"><span class="dot"></span><span class="label">人脸</span><span class="value">—</span></div>
+            <div class="status-item" id="st-light"><span class="dot"></span><span class="label">光线</span><span class="value">—</span></div>
+            <div class="status-item" id="st-size"><span class="dot"></span><span class="label">距离</span><span class="value">—</span></div>
+            <div class="status-item" id="st-still"><span class="dot"></span><span class="label">稳定性</span><span class="value">—</span></div>
+          </div>
+        </div>
+
+        <div class="card panel-block">
+          <h3>拍摄要点</h3>
+          <div class="tips">
+            <div><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg><span>面向窗户或正前方的白光，避免背光与顶灯</span></div>
+            <div><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg><span>额头、两颊、下巴都要完整出现在画面里</span></div>
+            <div><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg><span>表情自然放松，不要皱眉或用力闭眼</span></div>
+            <div><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg><span>点击后会有 3 秒倒计时，请保持不动</span></div>
+          </div>
+        </div>
+
+        <div class="card panel-block" style="font-size:12.5px;color:#93a4c4">
+          <h3>隐私</h3>
+          视频流仅存在于本页面的内存中。关闭摄像头或离开页面后立即释放，
+          检测历史只保存分数，不保存任何图像。
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ======================= 3. 分析中 ======================= -->
+  <section class="step" id="step-analyzing">
+    <div class="card progress">
+      <div class="spinner"></div>
+      <h3 id="progress-title" style="margin:18px 0 0;font-size:17px">正在采集画面</h3>
+      <div class="progress-bar"><i id="progress-fill"></i></div>
+      <p id="progress-note" style="margin:0;font-size:13px;color:#93a4c4">准备中…</p>
+    </div>
+  </section>
+
+  <!-- ======================= 4. 报告 ======================= -->
+  <section class="step" id="step-report">
+    <div id="report-root"></div>
+
+    <div class="card actions no-print">
+      <button class="btn sm" id="btn-print">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><path d="M5 9h14v8h-3v4H8v-4H5z"/></svg>
+        打印 / 导出 PDF
+      </button>
+      <button class="btn sm ghost" id="btn-png">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7.5 11L12 15.5 16.5 11"/><path d="M5 19h14"/></svg>
+        下载标注图
+      </button>
+      <button class="btn sm ghost" id="btn-json">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6v3H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="M8.5 12h7M8.5 16h4"/></svg>
+        导出数据 JSON
+      </button>
+      <button class="btn sm ghost" id="btn-copy">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+        复制摘要
+      </button>
+      <span class="spacer"></span>
+      <button class="btn sm ghost" id="btn-clear">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
+        清除历史
+      </button>
+      <button class="btn sm" id="btn-again">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4.5h-4.5"/></svg>
+        再测一次
+      </button>
+    </div>
+  </section>
+
+  <!-- ======================= 5. 错误 ======================= -->
+  <section class="step" id="step-error">
+    <div class="card error-panel">
+      <div class="icon-bad">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9.5 17h-19L12 3z"/><path d="M12 9v5M12 17.5v.5"/></svg>
+      </div>
+      <h3 id="error-title">无法访问摄像头</h3>
+      <p id="error-desc"></p>
+      <div class="error-hint" id="error-hint"></div>
+      <button class="btn" id="btn-retry">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4.5h-4.5"/></svg>
+        重试
+      </button>
+    </div>
+  </section>
+
+  <footer class="foot">
+    皮肤健康检测 · 浏览器端图像分析 · 零依赖 · 零上传
+  </footer>
+</div>
+
+<!-- 实时分析用的离屏画布 -->
+<canvas id="live-canvas" width="240" height="135" hidden></canvas>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
