@@ -9,7 +9,7 @@
  * 不支持的浏览器则直接下载 PNG。
  */
 
-import { L } from './i18n.js';
+import { L, localeOf } from './i18n.js';
 import { DIMENSIONS, gradeOf, classifySkinType, buildAdvice, dimensionLabel } from './scoring.js';
 import { scoreColor, downloadBlob } from './report.js';
 
@@ -75,7 +75,7 @@ export async function buildShareCard(ctx, lang = 'zh') {
   g.font = '700 64px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
   g.fillText(t('report.title'), 64, 176);
 
-  const dateStr = new Date(timestamp).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false });
+  const dateStr = new Date(timestamp).toLocaleString(localeOf(lang), { hour12: false });
   g.fillStyle = '#64748b';
   g.font = '400 28px -apple-system, "PingFang SC", sans-serif';
   g.fillText(dateStr, 64, 224);
