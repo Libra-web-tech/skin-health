@@ -1,10 +1,21 @@
 /**
- * report.js —— 报告渲染、图表绘制与导出
+ * report.js —— 报告渲染、图表绘制与导出（支持中英文）
  *
  * 全部图表用 Canvas 2D 手绘，不依赖任何第三方图表库。
+ * 语言相关文案通过 i18n（L）与 scoring 的 lang 参数获取；
+ * renderReport(root, ctx, lang) 会按当前语言重建所有文案。
  */
 
-import { DIMENSIONS, gradeOf, lifestyleTips } from './scoring.js';
+import { L } from './i18n.js';
+import {
+  DIMENSIONS,
+  gradeOf,
+  classifySkinType,
+  buildAdvice,
+  detailRows,
+  lifestyleTips,
+  dimensionLabel,
+} from './scoring.js';
 
 /* ------------------------------ 图标 ------------------------------ */
 const ICONS = {
@@ -27,6 +38,7 @@ const ICONS = {
   printer: '<path d="M7 9V3h10v6"/><path d="M5 9h14v8h-3v4H8v-4H5z"/>',
   refresh: '<path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4.5h-4.5"/>',
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
+  share: '<circle cx="6" cy="12" r="2.6"/><circle cx="17.5" cy="5.5" r="2.6"/><circle cx="17.5" cy="18.5" r="2.6"/><path d="M8.3 10.8l6.9-4M8.3 13.2l6.9 4"/>',
 };
 
 function icon(name) {
@@ -46,26 +58,75 @@ export function scoreColor(score) {
   return '#f87171';
 }
 
-const LAYERS = {
-  roi: { label: '分析区域', color: null, hint: '算法实际采样的解剖学分区' },
-  redness: { label: '泛红 / 炎症', color: [255, 77, 109], hint: '红度高于自身基线的区域' },
-  blemish: { label: '痘印 / 丘疹', color: [244, 63, 94], hint: '局部红度突起' },
-  shine: { label: '油光 / 反光', color: [56, 189, 248], hint: '镜面反射（皮脂）区域' },
-  spot: { label: '色斑 / 色素', color: [245, 158, 11], hint: '比周围皮肤明显暗的区域' },
-  pore: { label: '毛孔 / 粗糙', color: [168, 85, 247], hint: '中尺度凹凸结构' },
-  line: { label: '细纹 / 纹路', color: [34, 211, 238], hint: '强梯度线条' },
+/* 报告页局部文案（历史表头、分区名等） */
+const RTXT = {
+  zh: { histTime: '时间', histOverall: '综合', histDelta: '较上次', pxUnit: '像素' },
+  en: { histTime: 'Time', histOverall: 'Overall', histDelta: 'Delta', pxUnit: 'px' },
 };
+
+const ROI_LABELS = {
+  zh: {
+    forehead: '额头',
+    glabella: '眉间',
+    eyeLeft: '左眼',
+    eyeRight: '右眼',
+    underEyeLeft: '左下眼睑',
+    underEyeRight: '右下眼睑',
+    crowLeft: '左鱼尾',
+    crowRight: '右鱼尾',
+    cheekLeft: '左颧颊',
+    cheekRight: '右颧颊',
+    nose: '鼻部',
+    perioral: '口周',
+    chin: '下巴',
+    nasolabialLeft: '左法令纹',
+    nasolabialRight: '右法令纹',
+  },
+  en: {
+    forehead: 'Forehead',
+    glabella: 'Glabella',
+    eyeLeft: 'Left eye',
+    eyeRight: 'Right eye',
+    underEyeLeft: 'Left under-eye',
+    underEyeRight: 'Right under-eye',
+    crowLeft: 'Left crow',
+    crowRight: 'Right crow',
+    cheekLeft: 'Left cheek',
+    cheekRight: 'Right cheek',
+    nose: 'Nose',
+    perioral: 'Perioral',
+    chin: 'Chin',
+    nasolabialLeft: 'Left fold',
+    nasolabialRight: 'Right fold',
+  },
+};
+
+const LAYER_KEYS = [
+  ['roi', [255, 255, 255]],
+  ['redness', [255, 77, 109]],
+  ['blemish', [244, 63, 94]],
+  ['shine', [56, 189, 248]],
+  ['spot', [245, 158, 11]],
+  ['pore', [168, 85, 247]],
+  ['line', [34, 211, 238]],
+];
 
 /* ======================================================================
    报告主体
    ====================================================================== */
-export function renderReport(root, ctx) {
-  const { scores, advice, skinType, tone, result, history } = ctx;
+export function renderReport(root, ctx, lang = 'zh') {
+  const { result, scores, tone, timestamp, history } = ctx;
   const m = result.metrics;
+  const grade = gradeOf(scores.overall, lang);
+  const skinType = classifySkinType(m, scores, lang);
+  const advice = buildAdvice(m, scores, skinType, tone, lang);
+  const rows = detailRows(m, tone, scores, lang);
+
   const overall = scores.overall;
   const R = 66;
   const C = 2 * Math.PI * R;
   const offset = C * (1 - overall / 100);
+  const t = (key, vars) => L(lang, key, vars);
 
   root.innerHTML = `
     <div class="card report-head">
@@ -80,40 +141,41 @@ export function renderReport(root, ctx) {
         </svg>
         <div class="inner">
           <div class="num" style="color:${scoreColor(overall)}">${overall.toFixed(0)}</div>
-          <div class="of">综合评分</div>
+          <div class="of">${t('report.overall')}</div>
         </div>
       </div>
 
       <div class="head-info">
-        <h2>面部皮肤健康报告</h2>
+        <h2>${t('report.title')}</h2>
         <div class="grade-line">
           <span class="pill score" style="color:${scoreColor(overall)};border-color:${scoreColor(overall)}55;background:${scoreColor(overall)}14">
-            ${esc(scores.grade.label)}
+            ${esc(grade.label)}
           </span>
           <span class="pill">${esc(skinType.type)}</span>
-          <span class="pill">肤色 · ${esc(tone.name)}</span>
+          <span class="pill">${lang === 'en' ? 'Tone' : '肤色'} · ${esc(tone.name)}</span>
         </div>
         <div class="meta">
-          <span>检测时间 <b>${new Date(ctx.timestamp).toLocaleString('zh-CN', { hour12: false })}</b></span>
-          <span>分析帧数 <b>${result.frames || 1} 帧</b></span>
-          <span>采样质量 <b>${result.quality.score.toFixed(0)} / 100</b></span>
-          <span>面部覆盖 <b>${(m.skinCoverage * 100).toFixed(1)}%</b></span>
+          <span>${t('report.time')} <b>${new Date(timestamp).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false })}</b></span>
+          <span>${t('report.frames')} <b>${result.frames || 1} ${t('report.frameUnit')}</b></span>
+          <span>${t('report.quality')} <b>${result.quality.score.toFixed(0)} / 100</b></span>
+          <span>${t('report.coverage')} <b>${(m.skinCoverage * 100).toFixed(1)}%</b></span>
         </div>
         ${
           result.quality.warnings.length
             ? `<div class="quality-banner">${icon('alert')}<div>
-                 <b>本次采样的影响因素：</b>${result.quality.warnings.map((w) => esc(w.text)).join('；')}。
-                 相关指标仅供参考，建议在稳定光线下复测对比趋势。
+                 ${esc(t('report.qualityWarn', { list: result.quality.warnings.map((w) => esc(w.text)).join('；') }))}
                </div></div>`
             : ''
         }
       </div>
     </div>
 
+    ${renderCompare(ctx, lang)}
+
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">1</span>六维皮肤状态</h3>
-        <p>分数越高越好，满分 100</p>
+        <h3><span class="num">1</span>${t('report.dimTitle')}</h3>
+        <p>${t('report.dimSub')}</p>
       </div>
       <div class="radar-wrap">
         <div class="radar-canvas"><canvas id="radar"></canvas></div>
@@ -123,26 +185,26 @@ export function renderReport(root, ctx) {
 
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">2</span>维度详情</h3>
-        <p>点击下方"测量数据"可查看每个分数背后的原始读数</p>
+        <h3><span class="num">2</span>${t('report.dimDetailTitle')}</h3>
+        <p>${t('report.dimDetailSub')}</p>
       </div>
       <div class="dim-grid" id="dim-grid"></div>
     </div>
 
-    ${renderConcerns(advice)}
+    ${renderConcerns(advice, lang)}
 
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">4</span>测量数据</h3>
-        <p>所有数值均来自本机浏览器内的图像分析，可直接复核</p>
+        <h3><span class="num">4</span>${t('report.dataTitle')}</h3>
+        <p>${t('report.dataSub')}</p>
       </div>
       <div class="table-wrap"><table class="data" id="data-table"></table></div>
     </div>
 
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">5</span>影像证据</h3>
-        <p>切换图层查看不同指标在脸上的分布</p>
+        <h3><span class="num">5</span>${t('report.evidenceTitle')}</h3>
+        <p>${t('report.evidenceSub')}</p>
       </div>
       <div class="evidence">
         <canvas id="evidence"></canvas>
@@ -150,30 +212,26 @@ export function renderReport(root, ctx) {
       </div>
     </div>
 
-    ${renderRoutine(advice)}
-    ${renderLifestyle()}
-    ${renderMedical(advice)}
-    ${renderHistoryBlock(history)}
+    ${renderRoutine(advice, lang)}
+    ${renderLifestyle(lang)}
+    ${renderMedical(advice, lang)}
+    ${renderHistoryBlock(history, lang)}
 
     <div class="disclaimer">
-      <b>重要说明与免责声明</b>
-      本报告由浏览器内的图像分析算法自动生成，测量的是<b>可见光照片上的表面光学特征</b>，
-      并非医学检查。它不能诊断任何疾病，也不能替代皮肤科医生的面诊、皮肤镜或实验室检查。
-      评分采用启发式模型，适合用来观察<b>自身在相同光线与设备条件下的长期变化趋势</b>，
-      不同设备、不同光线、不同肤色之间的绝对值不具备可比性。
-      若皮肤出现持续红肿、瘙痒、疼痛、渗出、迅速变化的痣或任何让你担心的症状，请及时就医。
+      <b>${t('report.disclaimerTitle')}</b>
+      ${esc(t('report.disclaimer'))}
     </div>
   `;
 
-  renderLegend(root.querySelector('#radar-legend'), scores.dimensions);
-  renderDimCards(root.querySelector('#dim-grid'), scores, m);
-  renderDataTable(root.querySelector('#data-table'), ctx);
-  renderEvidence(root.querySelector('#evidence'), root.querySelector('#layer-list'), ctx);
-  renderSpark(root.querySelector('#spark'), history);
+  renderLegend(root.querySelector('#radar-legend'), scores.dimensions, lang);
+  renderDimCards(root.querySelector('#dim-grid'), scores, m, lang);
+  renderDataTable(root.querySelector('#data-table'), rows, lang);
+  renderEvidence(root.querySelector('#evidence'), root.querySelector('#layer-list'), ctx, lang);
+  renderSpark(root.querySelector('#spark'), history, lang);
 
   // 雷达图与评分环动画
   requestAnimationFrame(() => {
-    drawRadar(root.querySelector('#radar'), scores.dimensions);
+    drawRadar(root.querySelector('#radar'), scores.dimensions, lang);
     const ring = root.querySelector('.score-ring .value');
     if (ring) ring.style.strokeDashoffset = ring.dataset.offset;
     root.querySelectorAll('.dim-bar i, .legend-row .track i').forEach((el) => {
@@ -183,22 +241,96 @@ export function renderReport(root, ctx) {
 }
 
 /** 报告已渲染后窗口尺寸变化时重绘雷达图 */
-export function redrawRadar(root, dimensions) {
+export function redrawRadar(root, dimensions, lang = 'zh') {
   const c = root.querySelector('#radar');
-  if (c) drawRadar(c, dimensions);
+  if (c) drawRadar(c, dimensions, lang);
+}
+
+/* ------------------------------ 与上次对比 ------------------------------ */
+function renderCompare(ctx, lang) {
+  const prev = ctx.prev;
+  if (!prev || !prev.dimensions) return '';
+
+  const t = (key, vars) => L(lang, key, vars);
+  const cur = ctx.scores;
+
+  const diffMs = ctx.timestamp - prev.ts;
+  let diffText;
+  if (diffMs < 60 * 1000) diffText = t('compare.justNow');
+  else if (diffMs < 3600 * 1000) diffText = t('compare.minutes', { n: Math.max(1, Math.round(diffMs / 60000)) });
+  else if (diffMs < 86400 * 1000) diffText = t('compare.hours', { n: Math.max(1, Math.round(diffMs / 3600000)) });
+  else diffText = t('compare.days', { n: Math.max(1, Math.round(diffMs / 86400000)) });
+
+  const arrow = (d0, signed = true, suffix = '') => {
+    const sign = d0 > 0 ? '+' : '';
+    const abs = Math.abs(d0).toFixed(suffix === '%' ? 2 : 1);
+    const glyph = d0 > 0 ? '▲' : d0 < 0 ? '▼' : '▪';
+    return `${glyph} ${signed && d0 > 0 ? sign : ''}${abs}${suffix}`;
+  };
+
+  // 维度（分数越高越好 → 差值为正 = 变好）
+  const dimChips = DIMENSIONS.map((d) => {
+    const d0 = cur.dimensions[d.key] - prev.dimensions[d.key];
+    return `
+      <div class="cmp-chip">
+        <span class="cmp-delta ${d0 >= 0 ? 'good' : 'bad'}">${arrow(d0)}</span>
+        <span class="cmp-name">${esc(dimensionLabel(d.key, lang))}</span>
+      </div>`;
+  }).join('');
+
+  // 关键指标（百分比，越低越好 → 差值为负 = 变好）
+  const keys = ['redness', 'blemish', 'shine', 'spot', 'pore', 'line'];
+  const metricChips = keys
+    .map((k) => {
+      const a = prev.key && prev.key[k] !== undefined ? prev.key[k] : null;
+      const b = ctx.keyPct ? ctx.keyPct[k] : null;
+      if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b)) return '';
+      const d0 = b - a;
+      return `
+        <div class="cmp-chip">
+          <span class="cmp-delta ${d0 <= 0 ? 'good' : 'bad'}">${arrow(d0, true, '%')}</span>
+          <span class="cmp-name">${esc(t(`compare.metric.${k}`))}</span>
+        </div>`;
+    })
+    .join('');
+
+  const overallDelta = cur.overall - prev.overall;
+
+  return `
+    <div class="card section compare">
+      <div class="section-head">
+        <h3><span class="num">★</span>${t('compare.title')}</h3>
+        <p>${t('compare.sub', {
+          t: new Date(prev.ts).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false }),
+          d: diffText,
+        })}</p>
+      </div>
+      <div class="cmp-overall">
+        <div class="cmp-chip big">
+          <span class="cmp-delta ${overallDelta >= 0 ? 'good' : 'bad'}">${arrow(overallDelta)}</span>
+          <span class="cmp-name">${t('compare.overall')}</span>
+        </div>
+      </div>
+      <div class="cmp-block">
+        <h4>${t('compare.dim')}</h4>
+        <div class="cmp-grid">${dimChips}</div>
+      </div>
+      ${metricChips ? `<div class="cmp-block"><h4>${t('compare.key')}</h4><div class="cmp-grid">${metricChips}</div></div>` : ''}
+    </div>`;
 }
 
 /* ------------------------------ 关注项 ------------------------------ */
-function renderConcerns(advice) {
+function renderConcerns(advice, lang) {
+  const t = (key, vars) => L(lang, key, vars);
   if (!advice.concerns.length) {
     return `
       <div class="card section">
-        <div class="section-head"><h3><span class="num">3</span>重点关注</h3></div>
-        <div class="history-empty">本次检测未发现明显异常项，继续保持现有的护肤习惯即可。</div>
+        <div class="section-head"><h3><span class="num">3</span>${t('report.concernTitle')}</h3></div>
+        <div class="history-empty">${t('report.concernEmpty')}</div>
       </div>`;
   }
 
-  const sevLabel = { high: '优先处理', mid: '建议改善', low: '轻度关注' };
+  const sevLabel = { high: t('report.sevHigh'), mid: t('report.sevMid'), low: t('report.sevLow') };
 
   const items = advice.concerns
     .map(
@@ -215,7 +347,7 @@ function renderConcerns(advice) {
             .join('')}
         </div>
         <div class="avoid-row">
-          <b>需要避免：</b>
+          <b>${t('report.avoidLabel')}</b>
           <div class="tags">${c.avoid.map((a) => `<span class="tag">${esc(a)}</span>`).join('')}</div>
         </div>
         <div class="action-row">${icon('spark')}<div>${esc(c.action)}</div></div>
@@ -226,15 +358,16 @@ function renderConcerns(advice) {
   return `
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">3</span>重点关注</h3>
-        <p>共 ${advice.concerns.length} 项，按优先级排序</p>
+        <h3><span class="num">3</span>${t('report.concernTitle')}</h3>
+        <p>${t('report.concernSub', { n: advice.concerns.length })}</p>
       </div>
       ${items}
     </div>`;
 }
 
 /* ------------------------------ 护理流程 ------------------------------ */
-function renderRoutine(advice) {
+function renderRoutine(advice, lang) {
+  const t = (key) => L(lang, key);
   const col = (title, iconName, rows) => `
     <div class="routine-col">
       <h4>${icon(iconName)}${title}</h4>
@@ -255,16 +388,16 @@ function renderRoutine(advice) {
   return `
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">6</span>日常护理流程</h3>
-        <p>根据本次检测结果生成 · 新成分请先做耳后试用</p>
+        <h3><span class="num">6</span>${t('report.routineTitle')}</h3>
+        <p>${t('report.routineSub')}</p>
       </div>
       <div class="routine-grid">
-        ${col('早间流程', 'sun', advice.routine.am)}
-        ${col('晚间流程', 'moon', advice.routine.pm)}
+        ${col(t('report.am'), 'sun', advice.routine.am)}
+        ${col(t('report.pm'), 'moon', advice.routine.pm)}
         <div class="routine-col">
-          <h4>${icon('water')}每周维护</h4>
+          <h4>${icon('water')}${t('report.weekly')}</h4>
           <div class="bullet-list">
-            ${advice.routine.weekly.map((t) => `<div>${icon('check')}<span>${esc(t)}</span></div>`).join('')}
+            ${advice.routine.weekly.map((x) => `<div>${icon('check')}<span>${esc(x)}</span></div>`).join('')}
           </div>
         </div>
       </div>
@@ -272,46 +405,47 @@ function renderRoutine(advice) {
 }
 
 /* ------------------------------ 生活方式 ------------------------------ */
-function renderLifestyle() {
-  const tips = lifestyleTips();
+function renderLifestyle(lang) {
+  const tips = lifestyleTips(lang);
+  const t = (key) => L(lang, key);
   return `
     <div class="card section">
-      <div class="section-head"><h3><span class="num">7</span>生活方式建议</h3></div>
+      <div class="section-head"><h3><span class="num">7</span>${t('report.lifeTitle')}</h3></div>
       <div class="tip-grid">
         ${tips
-          .map(
-            (t) => `<div class="tip"><h5>${icon(t.icon)}${esc(t.title)}</h5><p>${esc(t.text)}</p></div>`,
-          )
+          .map((x) => `<div class="tip"><h5>${icon(x.icon)}${esc(x.title)}</h5><p>${esc(x.text)}</p></div>`)
           .join('')}
       </div>
     </div>`;
 }
 
 /* ------------------------------ 就医提示 ------------------------------ */
-function renderMedical(advice) {
+function renderMedical(advice, lang) {
+  const t = (key) => L(lang, key);
   return `
     <div class="card section medical">
-      <div class="section-head"><h3><span class="num">8</span>何时应该就医</h3></div>
-      <ul>${advice.seeDoctor.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+      <div class="section-head"><h3><span class="num">8</span>${t('report.medicalTitle')}</h3></div>
+      <ul>${advice.seeDoctor.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
     </div>`;
 }
 
 /* ------------------------------ 历史 ------------------------------ */
-function renderHistoryBlock(history) {
+function renderHistoryBlock(history, lang) {
+  const t = (key) => L(lang, key);
   const has = history && history.length > 1;
   return `
     <div class="card section">
       <div class="section-head">
-        <h3><span class="num">9</span>历史趋势</h3>
-        <p>数据仅保存在本机浏览器，不会上传</p>
+        <h3><span class="num">9</span>${t('report.historyTitle')}</h3>
+        <p>${t('report.historySub')}</p>
       </div>
       ${
         has
           ? `<div class="spark-wrap"><canvas id="spark"></canvas>
-               <div class="spark-legend"><span>最早</span><span>综合评分变化</span><span>最近</span></div>
+               <div class="spark-legend"><span>${t('report.historyEarliest')}</span><span>${t('report.historyOverallChange')}</span><span>${t('report.historyLatest')}</span></div>
              </div>
              <div class="table-wrap"><table class="hist" id="hist-table"></table></div>`
-          : `<div class="history-empty">这是第一条记录。保持相同的拍摄条件（同一设备、同一光线、同一时间）定期复测，趋势才有参考价值。</div>`
+          : `<div class="history-empty">${t('report.historyEmpty')}</div>`
       }
     </div>`;
 }
@@ -321,7 +455,7 @@ function renderHistoryBlock(history) {
    ====================================================================== */
 
 /** 六维雷达图 */
-function drawRadar(canvas, dims) {
+function drawRadar(canvas, dims, lang) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const size = canvas.clientWidth || 360;
   canvas.width = size * dpr;
@@ -382,7 +516,6 @@ function drawRadar(canvas, dims) {
   g.lineWidth = 2;
   g.stroke();
 
-  // 数据点
   pts.forEach(([x, y]) => {
     g.beginPath();
     g.arc(x, y, 3.6, 0, Math.PI * 2);
@@ -394,7 +527,8 @@ function drawRadar(canvas, dims) {
   });
 
   // 标签
-  g.font = '600 12px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  const fontEn = lang === 'en';
+  g.font = `600 ${fontEn ? 10.5 : 12}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   DIMENSIONS.forEach((d, i) => {
@@ -402,58 +536,73 @@ function drawRadar(canvas, dims) {
     const lx = cx + Math.cos(a) * (radius + 30);
     const ly = cy + Math.sin(a) * (radius + 24);
     g.fillStyle = '#93a4c4';
-    g.fillText(d.label, lx, ly - 6);
+    g.fillText(dimensionLabel(d.key, lang), lx, ly - 6);
     g.fillStyle = scoreColor(dims[d.key]);
     g.font = '700 13px -apple-system, "PingFang SC", sans-serif';
     g.fillText(dims[d.key].toFixed(0), lx, ly + 9);
-    g.font = '600 12px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    g.font = `600 ${fontEn ? 10.5 : 12}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
   });
 }
 
-function renderLegend(el, dims) {
+function renderLegend(el, dims, lang) {
   el.innerHTML = DIMENSIONS.map(
     (d) => `
     <div class="legend-row">
-      <span>${d.label}</span>
-      <span class="track"><i data-w="${dims[d.key].toFixed(1)}" style="background:${scoreColor(
-        dims[d.key],
-      )}"></i></span>
+      <span>${esc(dimensionLabel(d.key, lang))}</span>
+      <span class="track"><i data-w="${dims[d.key].toFixed(1)}" style="background:${scoreColor(dims[d.key])}"></i></span>
       <span class="n" style="color:${scoreColor(dims[d.key])}">${dims[d.key].toFixed(0)}</span>
     </div>`,
   ).join('');
 }
 
-function renderDimCards(el, scores, m) {
+/** 维度描述文案 */
+function dimensionDesc(key, lang) {
+  const descs = {
+    zh: {
+      calmness: '泛红、炎症、痘印等刺激信号',
+      oilBalance: '皮脂分泌与干燥缺水倾向',
+      smoothness: '皮肤纹理、毛孔与粗糙程度',
+      evenness: '色斑、色素沉积与肤色一致度',
+      firmness: '细纹、干纹与纹路深度',
+      radiance: '暗沉、发黄与通透感',
+      eye: '下眼睑与颧颊的亮度差',
+    },
+    en: {
+      calmness: 'Redness, irritation and blemish signals',
+      oilBalance: 'Sebum production and dryness tendency',
+      smoothness: 'Skin texture, pores and roughness',
+      evenness: 'Dark spots, pigmentation and tone uniformity',
+      firmness: 'Fine lines and wrinkle depth',
+      radiance: 'Dullness, sallowness and glow',
+      eye: 'Lightness difference between lower eyelid and cheek',
+    },
+  };
+  return (descs[lang === 'en' ? 'en' : 'zh'] || descs.zh)[key] || key;
+}
+
+function renderDimCards(el, scores, m, lang) {
   const notes = {
     calmness: () =>
-      `${(m.rednessRatio * 100).toFixed(1)}% 区域泛红 · ${(m.blemishRatio * 100).toFixed(1)}% 局部红点`,
+      `${(m.rednessRatio * 100).toFixed(1)}% ${lang === 'en' ? 'red ·' : '区域泛红 ·'} ${(m.blemishRatio * 100).toFixed(1)}% ${lang === 'en' ? 'spots' : '局部红点'}`,
     oilBalance: () =>
-      `反光 ${(m.shineRatio * 100).toFixed(1)}% · T区 ${(m.tzoneShine * 100).toFixed(1)}% / 颊 ${(
-        m.cheekShine * 100
-      ).toFixed(1)}%`,
-    smoothness: () => `纹理 ${m.textureCheek.toFixed(2)} · 毛孔 ${(m.poreDensity * 100).toFixed(1)}%`,
+      `${(m.shineRatio * 100).toFixed(1)}% ${lang === 'en' ? 'shine · T' : '反光 · T区'} ${(m.tzoneShine * 100).toFixed(1)}% / ${lang === 'en' ? 'cheek' : '颊'} ${(m.cheekShine * 100).toFixed(1)}%`,
+    smoothness: () => `${lang === 'en' ? 'texture' : '纹理'} ${m.textureCheek.toFixed(2)} · ${lang === 'en' ? 'pores' : '毛孔'} ${(m.poreDensity * 100).toFixed(1)}%`,
     evenness: () =>
-      `暗斑 ${(m.spotRatio * 100).toFixed(1)}% · σL* ${(m.faceLstdMatte ?? m.faceLstd).toFixed(1)}`,
+      `${lang === 'en' ? 'spots' : '暗斑'} ${(m.spotRatio * 100).toFixed(1)}% · σL* ${(m.faceLstdMatte ?? m.faceLstd).toFixed(1)}`,
     firmness: () =>
-      `额纹 ${(m.lineDensityForehead * 100).toFixed(1)}% · 鱼尾 ${(m.lineDensityCrow * 100).toFixed(
-        1,
-      )}% · 法令 ${(m.lineDensityNasolabial * 100).toFixed(1)}%`,
-    radiance: () => `亮度 L* ${m.faceL.toFixed(1)} · 黄度 b* ${m.sallowness.toFixed(1)}`,
+      `${(m.lineDensityForehead * 100).toFixed(1)}% / ${(m.lineDensityCrow * 100).toFixed(1)}% / ${(m.lineDensityNasolabial * 100).toFixed(1)}%`,
+    radiance: () => `L* ${m.faceL.toFixed(1)} · b* ${m.sallowness.toFixed(1)}`,
   };
 
   let html = DIMENSIONS.map(
     (d) => `
     <div class="dim-card">
       <div class="dim-top">
-        <span class="name">${icon(d.icon)}${d.label}</span>
-        <span class="val" style="color:${scoreColor(scores.dimensions[d.key])}">${scores.dimensions[
-          d.key
-        ].toFixed(0)}</span>
+        <span class="name">${icon(d.icon)}${esc(dimensionLabel(d.key, lang))}</span>
+        <span class="val" style="color:${scoreColor(scores.dimensions[d.key])}">${scores.dimensions[d.key].toFixed(0)}</span>
       </div>
-      <div class="dim-bar"><i data-w="${scores.dimensions[d.key].toFixed(
-        1,
-      )}" style="background:${scoreColor(scores.dimensions[d.key])}"></i></div>
-      <p>${d.desc}<br><span style="color:#7c8bab">${notes[d.key]()}</span></p>
+      <div class="dim-bar"><i data-w="${scores.dimensions[d.key].toFixed(1)}" style="background:${scoreColor(scores.dimensions[d.key])}"></i></div>
+      <p>${esc(dimensionDesc(d.key, lang))}<br><span style="color:#7c8bab">${notes[d.key]()}</span></p>
     </div>`,
   ).join('');
 
@@ -461,25 +610,24 @@ function renderDimCards(el, scores, m) {
     html += `
       <div class="dim-card">
         <div class="dim-top">
-          <span class="name">${icon('moon')}眼周状态</span>
-          <span class="val" style="color:${scoreColor(scores.darkCircle)}">${scores.darkCircle.toFixed(
-            0,
-          )}</span>
+          <span class="name">${icon('moon')}${esc(dimensionLabel('eye', lang))}</span>
+          <span class="val" style="color:${scoreColor(scores.darkCircle)}">${scores.darkCircle.toFixed(0)}</span>
         </div>
-        <div class="dim-bar"><i data-w="${scores.darkCircle.toFixed(
-          1,
-        )}" style="background:${scoreColor(scores.darkCircle)}"></i></div>
-        <p>下眼睑与颧颊的亮度差<br><span style="color:#7c8bab">ΔL* ${Number.isFinite(m.undereyeDelta) ? m.undereyeDelta.toFixed(1) : '—'}</span></p>
+        <div class="dim-bar"><i data-w="${scores.darkCircle.toFixed(1)}" style="background:${scoreColor(scores.darkCircle)}"></i></div>
+        <p>${esc(dimensionDesc('eye', lang))}<br><span style="color:#7c8bab">ΔL* ${Number.isFinite(m.undereyeDelta) ? m.undereyeDelta.toFixed(1) : '—'}</span></p>
       </div>`;
   }
 
   el.innerHTML = html;
 }
 
-function renderDataTable(table, ctx) {
-  const { rows } = ctx;
+function renderDataTable(table, rows, lang) {
+  const head = {
+    zh: ['测量指标', '读数', '对应得分', '指标含义'],
+    en: ['Metric', 'Reading', 'Score', 'What it means'],
+  }[lang === 'en' ? 'en' : 'zh'];
   table.innerHTML = `
-    <thead><tr><th>测量指标</th><th>读数</th><th>对应得分</th><th>指标含义</th></tr></thead>
+    <thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
     <tbody>
       ${rows
         .map(
@@ -490,9 +638,7 @@ function renderDataTable(table, ctx) {
           <td class="val">${
             r.score === null || r.score === undefined
               ? '—'
-              : `<span class="mini-bar"><i data-w="${r.score.toFixed(1)}" style="background:${scoreColor(
-                  r.score,
-                )}"></i></span><span style="color:${scoreColor(r.score)}">${r.score.toFixed(0)}</span>`
+              : `<span class="mini-bar"><i data-w="${r.score.toFixed(1)}" style="background:${scoreColor(r.score)}"></i></span><span style="color:${scoreColor(r.score)}">${r.score.toFixed(0)}</span>`
           }</td>
           <td class="hint">${esc(r.hint)}</td>
         </tr>`,
@@ -505,13 +651,13 @@ function renderDataTable(table, ctx) {
 }
 
 /* ------------------------------ 影像证据 ------------------------------ */
-function renderEvidence(canvas, layerList, ctx) {
+function renderEvidence(canvas, layerList, ctx, lang) {
   let current = 'roi';
   const src = ctx.result;
   const image = ctx.capture.imageData;
 
   const counts = {};
-  for (const key of Object.keys(LAYERS)) {
+  for (const [key] of LAYER_KEYS) {
     if (key === 'roi' || !src.maps[key]) {
       counts[key] = 0;
       continue;
@@ -523,21 +669,19 @@ function renderEvidence(canvas, layerList, ctx) {
   }
 
   const draw = () => {
-    drawEvidence(canvas, image, src, LAYERS[current], current);
+    drawEvidence(canvas, image, src, current, lang);
   };
 
-  layerList.innerHTML = Object.entries(LAYERS)
-    .map(
-      ([key, l]) => `
+  layerList.innerHTML = LAYER_KEYS.map(
+    ([key, color]) => `
       <button class="layer-btn${key === current ? ' active' : ''}" data-layer="${key}">
         <span class="swatch" style="background:${
-          l.color ? `rgb(${l.color.join(',')})` : 'linear-gradient(135deg,#4ea8ff,#22d3ee)'
+          key === 'roi' ? 'linear-gradient(135deg,#4ea8ff,#22d3ee)' : `rgb(${color.join(',')})`
         }"></span>
-        <span>${l.label}</span>
-        <span class="cnt">${key === 'roi' ? '分区' : counts[key].toLocaleString() + ' px'}</span>
+        <span>${esc(L(lang, `layer.${key}`))}</span>
+        <span class="cnt">${key === 'roi' ? esc(L(lang, 'layer.unit')) : counts[key].toLocaleString() + ' ' + RTXT[lang === 'en' ? 'en' : 'zh'].pxUnit}</span>
       </button>`,
-    )
-    .join('');
+  ).join('');
 
   layerList.querySelectorAll('.layer-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -547,13 +691,12 @@ function renderEvidence(canvas, layerList, ctx) {
     });
   });
 
-  // 尺寸就绪后再绘制，避免 clientWidth 为 0
   requestAnimationFrame(draw);
   window.addEventListener('resize', draw, { passive: true });
   return { redraw: draw };
 }
 
-function drawEvidence(canvas, image, result, layer, layerKey) {
+function drawEvidence(canvas, image, result, layerKey, lang) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const W = image.width;
   const H = image.height;
@@ -566,11 +709,11 @@ function drawEvidence(canvas, image, result, layer, layerKey) {
   const base = new ImageData(new Uint8ClampedArray(image.data), W, H);
 
   if (layerKey === 'roi') {
-    // 原图 + 分区框
     g.putImageData(base, 0, 0);
   } else {
     const mask = result.maps[layerKey];
-    const [r, gr, b] = layer.color;
+    const entry = LAYER_KEYS.find(([k]) => k === layerKey);
+    const [r, gr, b] = entry ? entry[1] : [255, 255, 255];
     const d = base.data;
     for (let i = 0, p = 0; i < mask.length; i++, p += 4) {
       const y = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
@@ -614,7 +757,7 @@ function drawEvidence(canvas, image, result, layer, layerKey) {
     g.strokeRect(r.x0 + 0.5, r.y0 + 0.5, r.x1 - r.x0 - 1, r.y1 - r.y0 - 1);
     g.setLineDash([]);
     if (on && layerKey === 'roi') {
-      const label = ROI_LABELS[name] || name;
+      const label = (ROI_LABELS[lang === 'en' ? 'en' : 'zh'] || ROI_LABELS.zh)[name] || name;
       const tw = g.measureText(label).width;
       g.fillStyle = 'rgba(6,12,24,0.72)';
       g.fillRect(r.x0, r.y0 - Math.max(13, W / 40), tw + 8, Math.max(13, W / 40));
@@ -624,26 +767,8 @@ function drawEvidence(canvas, image, result, layer, layerKey) {
   }
 }
 
-const ROI_LABELS = {
-  forehead: '额头',
-  glabella: '眉间',
-  eyeLeft: '左眼',
-  eyeRight: '右眼',
-  underEyeLeft: '左下眼睑',
-  underEyeRight: '右下眼睑',
-  crowLeft: '左鱼尾',
-  crowRight: '右鱼尾',
-  cheekLeft: '左颧颊',
-  cheekRight: '右颧颊',
-  nose: '鼻部',
-  perioral: '口周',
-  chin: '下巴',
-  nasolabialLeft: '左法令纹',
-  nasolabialRight: '右法令纹',
-};
-
 /* ------------------------------ 历史趋势 ------------------------------ */
-function renderSpark(canvas, history) {
+function renderSpark(canvas, history, lang) {
   if (!canvas || !history || history.length < 2) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || 600;
@@ -661,7 +786,6 @@ function renderSpark(canvas, history) {
   const x = (i) => pad.l + (n === 1 ? iw / 2 : (i * iw) / (n - 1));
   const y = (v) => pad.t + ih * (1 - v / 100);
 
-  // 网格
   g.strokeStyle = 'rgba(120,165,235,0.12)';
   g.lineWidth = 1;
   g.font = '10px -apple-system, sans-serif';
@@ -677,16 +801,12 @@ function renderSpark(canvas, history) {
     g.fillText(String(v), pad.l - 6, yy);
   }
 
-  // 折线 + 渐变填充
   g.beginPath();
   history.forEach((h, i) => (i === 0 ? g.moveTo(x(i), y(h.overall)) : g.lineTo(x(i), y(h.overall))));
-  const stroke = g.getLineDash();
-  g.setLineDash([]);
   g.strokeStyle = '#4ea8ff';
   g.lineWidth = 2.2;
   g.lineJoin = 'round';
   g.stroke();
-  g.setLineDash(stroke);
 
   const areaGrad = g.createLinearGradient(0, pad.t, 0, pad.t + ih);
   areaGrad.addColorStop(0, 'rgba(78,168,255,0.28)');
@@ -697,7 +817,6 @@ function renderSpark(canvas, history) {
   g.fillStyle = areaGrad;
   g.fill();
 
-  // 数据点
   history.forEach((h, i) => {
     g.beginPath();
     g.arc(x(i), y(h.overall), i === n - 1 ? 5 : 3, 0, Math.PI * 2);
@@ -711,22 +830,25 @@ function renderSpark(canvas, history) {
   // 历史表格
   const table = document.getElementById('hist-table');
   if (table) {
+    const rtxt = RTXT[lang === 'en' ? 'en' : 'zh'];
     const rows = [...history].reverse();
     table.innerHTML = `
-      <thead><tr><th>时间</th><th>综合</th><th>较上次</th><th>舒缓</th><th>水油</th><th>细腻</th><th>均匀</th><th>紧致</th><th>光泽</th></tr></thead>
+      <thead><tr><th>${rtxt.histTime}</th><th>${rtxt.histOverall}</th><th>${rtxt.histDelta}</th>${DIMENSIONS.map(
+        (d) => `<th>${esc(dimensionLabel(d.key, lang))}</th>`,
+      ).join('')}</tr></thead>
       <tbody>
         ${rows
           .map((h, i) => {
-            const prev = rows[i + 1];
-            const d = prev ? h.overall - prev.overall : null;
-            const cls = d === null ? '' : d > 0.5 ? 'up' : d < -0.5 ? 'down' : '';
-            const txt = d === null ? '—' : `${d > 0 ? '+' : ''}${d.toFixed(1)}`;
+            const p = rows[i + 1];
+            const d0 = p ? h.overall - p.overall : null;
+            const cls = d0 === null ? '' : d0 > 0.5 ? 'up' : d0 < -0.5 ? 'down' : '';
+            const txt = d0 === null ? '—' : `${d0 > 0 ? '+' : ''}${d0.toFixed(1)}`;
             const dim = (k) =>
               h.dimensions && h.dimensions[k] !== undefined
                 ? `<td style="color:${scoreColor(h.dimensions[k])}">${h.dimensions[k].toFixed(0)}</td>`
                 : '<td>—</td>';
             return `<tr>
-              <td>${new Date(h.ts).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+              <td>${new Date(h.ts).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
               <td style="color:${scoreColor(h.overall)};font-weight:700">${h.overall.toFixed(1)}</td>
               <td class="delta ${cls}">${txt}</td>
               ${dim('calmness')}${dim('oilBalance')}${dim('smoothness')}${dim('evenness')}${dim('firmness')}${dim('radiance')}
@@ -751,25 +873,29 @@ export function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-export function exportJSON(ctx) {
+export function exportJSON(ctx, lang = 'zh') {
+  const m = ctx.result.metrics;
+  const skinType = classifySkinType(m, ctx.scores, lang);
+  const advice = buildAdvice(m, ctx.scores, skinType, ctx.tone, lang);
   const payload = {
     生成时间: new Date(ctx.timestamp).toISOString(),
-    版本: 'skin-health-scanner/1.0',
+    版本: 'skin-health-scanner/2.0',
+    语言: lang === 'en' ? 'English' : '中文',
     说明: '本文件由浏览器端图像分析生成，非医学诊断。',
     综合评分: Number(ctx.scores.overall.toFixed(2)),
-    评级: ctx.scores.grade.label,
+    评级: gradeOf(ctx.scores.overall, lang).label,
     维度得分: Object.fromEntries(
       Object.entries(ctx.scores.dimensions).map(([k, v]) => [k, Number(v.toFixed(2))]),
     ),
     黑眼圈得分: ctx.scores.darkCircle === null ? null : Number(ctx.scores.darkCircle.toFixed(2)),
-    肤质判定: ctx.skinType.type,
+    肤质判定: skinType.type,
     肤色: { 描述: ctx.tone.name, ITA角度: Number(ctx.tone.ita.toFixed(2)) },
     原始测量值: Object.fromEntries(
-      Object.entries(ctx.result.metrics).map(([k, v]) => [k, Number.isFinite(v) ? Number(v.toFixed(5)) : null]),
+      Object.entries(m).map(([k, v]) => [k, Number.isFinite(v) ? Number(v.toFixed(5)) : null]),
     ),
     检测阈值: ctx.result.thresholds,
     采样质量: ctx.result.quality,
-    关注项: ctx.advice.concerns.map((c) => ({
+    关注项: advice.concerns.map((c) => ({
       标题: c.title,
       优先级: c.severity,
       说明: c.desc,
@@ -780,42 +906,48 @@ export function exportJSON(ctx) {
   };
   downloadBlob(
     new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
-    `皮肤报告_${stamp(ctx.timestamp)}.json`,
+    `skin-report_${stamp(ctx.timestamp)}.json`,
   );
 }
 
 export function exportPhoto(canvas, timestamp) {
   canvas.toBlob((blob) => {
-    if (blob) downloadBlob(blob, `皮肤分析标注图_${stamp(timestamp)}.png`);
+    if (blob) downloadBlob(blob, `skin-analysis_${stamp(timestamp)}.png`);
   }, 'image/png');
 }
 
-export function summaryText(ctx) {
-  const { scores, skinType, tone, result, advice } = ctx;
-  const L = [];
-  L.push('【面部皮肤健康报告】');
-  L.push(`时间：${new Date(ctx.timestamp).toLocaleString('zh-CN', { hour12: false })}`);
-  L.push(`综合评分：${scores.overall.toFixed(1)} / 100（${scores.grade.label}）`);
-  L.push(`肤质判定：${skinType.type}　肤色：${tone.name}`);
-  L.push('');
-  L.push('六维得分：');
-  for (const d of DIMENSIONS) L.push(`　· ${d.label}：${scores.dimensions[d.key].toFixed(0)}`);
-  if (scores.darkCircle !== null) L.push(`　· 眼周状态：${scores.darkCircle.toFixed(0)}`);
-  L.push('');
-  L.push('关键读数：');
-  L.push(`　· 泛红占比 ${(result.metrics.rednessRatio * 100).toFixed(1)}%`);
-  L.push(`　· 镜面反光 ${(result.metrics.shineRatio * 100).toFixed(1)}%`);
-  L.push(`　· 毛孔密度 ${(result.metrics.poreDensity * 100).toFixed(1)}%`);
-  L.push(`　· 色素暗斑 ${(result.metrics.spotRatio * 100).toFixed(1)}%`);
-  L.push(`　· 额头横纹 ${(result.metrics.lineDensityForehead * 100).toFixed(1)}%`);
+export function summaryText(ctx, lang = 'zh') {
+  const m = ctx.result.metrics;
+  const skinType = classifySkinType(m, ctx.scores, lang);
+  const advice = buildAdvice(m, ctx.scores, skinType, ctx.tone, lang);
+  const L0 = [];
+  L0.push(lang === 'en' ? '[Facial Skin Health Report]' : '【面部皮肤健康报告】');
+  L0.push(`${lang === 'en' ? 'Time' : '时间'}：${new Date(ctx.timestamp).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false })}`);
+  L0.push(`${lang === 'en' ? 'Overall' : '综合评分'}：${ctx.scores.overall.toFixed(1)} / 100（${gradeOf(ctx.scores.overall, lang).label}）`);
+  L0.push(`${lang === 'en' ? 'Skin type' : '肤质判定'}：${skinType.type}　${lang === 'en' ? 'Tone' : '肤色'}：${ctx.tone.name}`);
+  L0.push('');
+  L0.push(lang === 'en' ? 'Six dimensions:' : '六维得分：');
+  for (const d of DIMENSIONS) L0.push(`　· ${dimensionLabel(d.key, lang)}：${ctx.scores.dimensions[d.key].toFixed(0)}`);
+  if (ctx.scores.darkCircle !== null) L0.push(`　· ${dimensionLabel('eye', lang)}：${ctx.scores.darkCircle.toFixed(0)}`);
+  L0.push('');
+  L0.push(lang === 'en' ? 'Key readings:' : '关键读数：');
+  L0.push(`　· ${lang === 'en' ? 'Redness' : '泛红占比'} ${(m.rednessRatio * 100).toFixed(1)}%`);
+  L0.push(`　· ${lang === 'en' ? 'Oil shine' : '镜面反光'} ${(m.shineRatio * 100).toFixed(1)}%`);
+  L0.push(`　· ${lang === 'en' ? 'Pore density' : '毛孔密度'} ${(m.poreDensity * 100).toFixed(1)}%`);
+  L0.push(`　· ${lang === 'en' ? 'Dark spots' : '色素暗斑'} ${(m.spotRatio * 100).toFixed(1)}%`);
+  L0.push(`　· ${lang === 'en' ? 'Forehead lines' : '额头横纹'} ${(m.lineDensityForehead * 100).toFixed(1)}%`);
   if (advice.concerns.length) {
-    L.push('');
-    L.push('重点关注：');
-    for (const c of advice.concerns) L.push(`　· ${c.title}：${c.action}`);
+    L0.push('');
+    L0.push(lang === 'en' ? 'Key findings:' : '重点关注：');
+    for (const c of advice.concerns) L0.push(`　· ${c.title}：${c.action}`);
   }
-  L.push('');
-  L.push('※ 本报告由浏览器端图像分析生成，仅供护肤参考，不构成医学诊断。');
-  return L.join('\n');
+  L0.push('');
+  L0.push(
+    lang === 'en'
+      ? '※ Generated by in-browser image analysis; skincare reference only, not medical diagnosis.'
+      : '※ 本报告由浏览器端图像分析生成，仅供护肤参考，不构成医学诊断。',
+  );
+  return L0.join('\n');
 }
 
 function stamp(ts) {
