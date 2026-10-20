@@ -141,6 +141,98 @@ body::before {
   stroke-width: 2;
 }
 
+/* ------------------------------ 语言切换 ------------------------------ */
+.lang-btn {
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-dim);
+  background: rgba(120, 165, 235, 0.1);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.lang-btn:hover {
+  color: var(--text);
+  background: rgba(120, 165, 235, 0.18);
+}
+
+/* ------------------------------ 与上次对比 ------------------------------ */
+.compare {
+  border: 1px solid rgba(78, 168, 255, 0.28);
+}
+
+.cmp-overall {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.cmp-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  min-width: 96px;
+  background: rgba(10, 18, 34, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.cmp-chip.big {
+  padding: 16px 26px;
+}
+
+.cmp-delta {
+  font-size: 20px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmp-chip.big .cmp-delta {
+  font-size: 30px;
+}
+
+.cmp-delta.good {
+  color: var(--good);
+}
+
+.cmp-delta.bad {
+  color: var(--bad);
+}
+
+.cmp-name {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.cmp-chip.big .cmp-name {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.cmp-block h4 {
+  margin: 14px 0 10px;
+  font-size: 13px;
+  font-weight: 620;
+  color: var(--text-dim);
+}
+
+.cmp-block h4:first-child {
+  margin-top: 0;
+}
+
+.cmp-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 /* ------------------------------ 通用 ------------------------------ */
 .card {
   background: var(--panel);
@@ -1662,5 +1754,14 @@ table.hist td.delta.down {
   .dim-card,
   .routine-col {
     break-inside: avoid;
+  }
+
+  .compare {
+    border: 1px solid #dfe6ef !important;
+  }
+
+  .cmp-chip {
+    background: #f7f9fc !important;
+    border-color: #dfe6ef !important;
   }
 }
