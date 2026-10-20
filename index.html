@@ -27,7 +27,10 @@
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center">
-      <button class="lang-btn" id="btn-lang" title="English / 中文">EN</button>
+      <div class="lang-wrap" id="lang-wrap">
+        <button class="lang-btn" id="btn-lang" aria-haspopup="true" aria-expanded="false" title="Language / 语言">中文</button>
+        <div class="lang-menu" id="lang-menu" hidden></div>
+      </div>
       <span class="privacy-badge">
         <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
           <rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>
