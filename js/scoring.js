@@ -10,6 +10,7 @@
  */
 
 import { clamp } from './color.js';
+import { EXTRA } from './i18n.js';
 
 /* ------------------------- 文案词典（中/英） ------------------------- */
 const TXT = {
@@ -197,7 +198,6 @@ const TXT = {
     avoidRubEyes: '用力揉搓眼睛',
     avoidEyeRetinol: '在眼周使用高浓度视黄醇',
   },
-
   en: {
     gradeExcellent: 'Excellent',
     gradeGood: 'Good',
@@ -384,9 +384,14 @@ const TXT = {
   },
 };
 
+/* 合并额外语言（日/韩/法/西/德/俄）的建议文案 */
+for (const [code, mod] of Object.entries(EXTRA)) {
+  TXT[code] = mod.advice;
+}
+
 /** 取词 + {x} 占位符替换（缺词时回退中文） */
 const t = (lang, key, vars) => {
-  const table = TXT[lang === 'en' ? 'en' : 'zh'] || TXT.zh;
+  const table = TXT[lang] || TXT.zh;
   let s = table[key];
   if (s === undefined) s = TXT.zh[key];
   if (s === undefined) return key;
@@ -398,7 +403,7 @@ const t = (lang, key, vars) => {
 
 /** 成分词条：词典里存的是 [名称, 说明] 数组 */
 const ing = (lang, key) => {
-  const table = TXT[lang === 'en' ? 'en' : 'zh'] || TXT.zh;
+  const table = TXT[lang] || TXT.zh;
   const v = table[key] !== undefined ? table[key] : TXT.zh[key];
   return Array.isArray(v) ? v : [String(v), ''];
 };
@@ -436,10 +441,23 @@ const DIMENSION_I18N = {
   },
 };
 
+/* 合并额外语言的维度名/描述 */
+for (const [code, mod] of Object.entries(EXTRA)) {
+  DIMENSION_I18N[code] = mod.dim;
+}
+
 /** 维度名（含"眼周状态"）按语言取词 */
 export function dimensionLabel(key, lang = 'zh') {
-  const row = (DIMENSION_I18N[lang === 'en' ? 'en' : 'zh'] || DIMENSION_I18N.zh)[key];
+  const table = DIMENSION_I18N[lang] || DIMENSION_I18N.zh;
+  const row = table[key] || DIMENSION_I18N.zh[key];
   return row ? row[0] : key;
+}
+
+/** 维度描述按语言取词 */
+export function dimensionDesc(key, lang = 'zh') {
+  const table = DIMENSION_I18N[lang] || DIMENSION_I18N.zh;
+  const row = table[key] || DIMENSION_I18N.zh[key];
+  return row ? row[1] : key;
 }
 
 const WEIGHTS = {
