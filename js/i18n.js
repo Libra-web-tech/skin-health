@@ -1,22 +1,60 @@
 /**
- * i18n.js —— 中英文词典与语言管理
+ * i18n.js —— 多语言词典与语言管理（中/英/日/韩/法/西/德/俄）
  *
  * 用法：
- *   import { L, getLang, setLang, applyStaticLang, LANGS } from './i18n.js';
- *   L('zh', 'app.title')            // 取词
+ *   import { L, getLang, setLang, applyStaticLang, LANGS, EXTRA, localeOf } from './i18n.js';
+ *   L(lang, 'app.title')                        // 取词
  *   L(lang, 'advice.redness.desc', { red: '3.2' })  // 带占位符替换
  *
  * 语言保存在 localStorage（键 skin-health-lang），默认中文。
+ * 每种语言的完整词典放在 js/lang/<code>.js（含 ui / advice / dim / roi / table 五部分）。
  */
 
-export const LANGS = { zh: '中文', en: 'English' };
+import JA from './lang/ja.js';
+import KO from './lang/ko.js';
+import FR from './lang/fr.js';
+import ES from './lang/es.js';
+import DE from './lang/de.js';
+import RU from './lang/ru.js';
+
+/** 额外语言模块（scoring/report 从中读取 advice/dim/roi/table 部分） */
+export const EXTRA = { ja: JA, ko: KO, fr: FR, es: ES, de: DE, ru: RU };
+
+export const LANGS = {
+  zh: '中文',
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어',
+  fr: 'Français',
+  es: 'Español',
+  de: 'Deutsch',
+  ru: 'Русский',
+};
+
+const SUPPORTED = new Set(Object.keys(LANGS));
+
+/** 各语言的日期本地化 locale */
+const LOCALE = {
+  zh: 'zh-CN',
+  en: 'en-US',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  de: 'de-DE',
+  ru: 'ru-RU',
+};
+
+export function localeOf(lang) {
+  return LOCALE[lang] || LOCALE.zh;
+}
 
 const KEY = 'skin-health-lang';
 
 export function getLang() {
   try {
     const v = localStorage.getItem(KEY);
-    return v === 'en' ? 'en' : 'zh';
+    return SUPPORTED.has(v) ? v : 'zh';
   } catch {
     return 'zh';
   }
@@ -24,15 +62,15 @@ export function getLang() {
 
 export function setLang(lang) {
   try {
-    localStorage.setItem(KEY, lang === 'en' ? 'en' : 'zh');
+    localStorage.setItem(KEY, SUPPORTED.has(lang) ? lang : 'zh');
   } catch {
     /* ignore */
   }
 }
 
-/** 取词并替换 {x} 占位符 */
+/** 取词并替换 {x} 占位符（缺失时回退中文） */
 export function L(lang, key, vars) {
-  const table = DICT[lang === 'en' ? 'en' : 'zh'] || DICT.zh;
+  const table = DICT[SUPPORTED.has(lang) ? lang : 'zh'] || DICT.zh;
   let s = table[key];
   if (s === undefined) s = DICT.zh[key];
   if (s === undefined) return key;
@@ -537,3 +575,8 @@ const DICT = {
     'layer.unit': 'zones',
   },
 };
+
+/* 合并额外语言词典的 ui 部分（advice/dim/roi/table 由 scoring/report 各自读取） */
+for (const [code, mod] of Object.entries(EXTRA)) {
+  DICT[code] = mod.ui;
+}
