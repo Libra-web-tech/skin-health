@@ -142,6 +142,10 @@ body::before {
 }
 
 /* ------------------------------ 语言切换 ------------------------------ */
+.lang-wrap {
+  position: relative;
+}
+
 .lang-btn {
   padding: 8px 14px;
   font-family: inherit;
@@ -158,6 +162,49 @@ body::before {
 .lang-btn:hover {
   color: var(--text);
   background: rgba(120, 165, 235, 0.18);
+}
+
+.lang-menu {
+  /* 固定定位：保证任何屏幕宽度下都完整出现在视口内 */
+  position: fixed;
+  top: 66px;
+  right: 16px;
+  min-width: 148px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  background: rgba(16, 25, 44, 0.98);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  z-index: 80;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.lang-item {
+  padding: 9px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-dim);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lang-item:hover {
+  color: var(--text);
+  background: rgba(120, 165, 235, 0.14);
+}
+
+.lang-item.active {
+  color: var(--accent);
+  font-weight: 700;
+  background: rgba(78, 168, 255, 0.12);
 }
 
 /* ------------------------------ 与上次对比 ------------------------------ */
