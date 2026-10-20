@@ -15,7 +15,7 @@ import {
   downloadBlob,
 } from './report.js';
 import { shareCard, buildShareCard } from './sharecard.js';
-import { L, getLang, setLang, applyStaticLang } from './i18n.js';
+import { L, getLang, setLang, applyStaticLang, LANGS, localeOf } from './i18n.js';
 import { loadHistory, pushHistory, clearHistory, makeRecord } from './history.js';
 
 /* ------------------------------ DOM ------------------------------ */
@@ -47,6 +47,8 @@ const el = {
   btnStop: $('btn-stop'),
   btnRetry: $('btn-retry'),
   btnLang: $('btn-lang'),
+  langMenu: $('lang-menu'),
+  langWrap: $('lang-wrap'),
   btnPrint: $('btn-print'),
   btnPng: $('btn-png'),
   btnShare: $('btn-share'),
@@ -568,15 +570,46 @@ el.btnOverride.addEventListener('click', async () => {
   showStep('report');
 });
 
-el.btnLang.addEventListener('click', () => {
-  lang = lang === 'zh' ? 'en' : 'zh';
+/* ------------------------------ 语言切换 ------------------------------ */
+function buildLangMenu() {
+  el.langMenu.innerHTML = Object.entries(LANGS)
+    .map(
+      ([code, name]) =>
+        `<button class="lang-item${code === lang ? ' active' : ''}" data-lang="${code}">${escHtml(name)}</button>`,
+    )
+    .join('');
+}
+
+function closeLangMenu() {
+  el.langMenu.hidden = true;
+}
+
+function switchLanguage(code) {
+  closeLangMenu();
+  if (!LANGS[code] || code === lang) return;
+  lang = code;
   setLang(lang);
   applyStaticLang(lang);
-  el.btnLang.textContent = L(lang, 'app.langSwitch');
+  el.btnLang.textContent = LANGS[lang];
+  buildLangMenu();
   if (state.ctx && currentStep() === 'report') {
     renderReport(el.reportRoot, state.ctx, lang);
   }
-  toast(t('actions.toastLang', { lang: lang === 'zh' ? '中文' : 'English' }));
+  toast(t('actions.toastLang', { lang: LANGS[lang] }));
+}
+
+el.btnLang.addEventListener('click', (e) => {
+  e.stopPropagation();
+  el.langMenu.hidden = !el.langMenu.hidden;
+});
+
+el.langMenu.addEventListener('click', (e) => {
+  const btn = e.target.closest('.lang-item');
+  if (btn) switchLanguage(btn.dataset.lang);
+});
+
+document.addEventListener('click', (e) => {
+  if (!el.langMenu.hidden && !e.target.closest('.lang-wrap')) closeLangMenu();
 });
 
 window.addEventListener('resize', () => {
@@ -687,14 +720,15 @@ function syntheticFrame() {
 (function init() {
   lang = getLang();
   applyStaticLang(lang);
-  el.btnLang.textContent = L(lang, 'app.langSwitch');
+  el.btnLang.textContent = LANGS[lang];
+  buildLangMenu();
 
   const h = loadHistory();
   const note = $('history-note');
   if (note && h.length) {
     note.textContent = t('welcome.historyNote', {
       n: h.length,
-      t: new Date(h[h.length - 1].ts).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false }),
+      t: new Date(h[h.length - 1].ts).toLocaleString(localeOf(lang), { hour12: false }),
     });
   }
   if (!window.isSecureContext) {
