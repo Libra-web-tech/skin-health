@@ -1,9 +1,11 @@
 /**
  * app.js —— 应用主控：摄像头授权、实时引导、多帧采集、报告生成
+ *
+ * 支持中英文切换：语言状态存 localStorage，切换后整个界面与报告即时重渲染。
  */
 
 import { analyzeFrame, aggregateFrames, boxJitter, quickFaceBox } from './vision.js';
-import { scoreAll, classifySkinType, buildAdvice, detailRows } from './scoring.js';
+import { scoreAll, classifySkinType } from './scoring.js';
 import {
   renderReport,
   redrawRadar,
@@ -12,6 +14,8 @@ import {
   summaryText,
   downloadBlob,
 } from './report.js';
+import { shareCard, buildShareCard } from './sharecard.js';
+import { L, getLang, setLang, applyStaticLang } from './i18n.js';
 import { loadHistory, pushHistory, clearHistory, makeRecord } from './history.js';
 
 /* ------------------------------ DOM ------------------------------ */
@@ -42,8 +46,10 @@ const el = {
   btnCapture: $('btn-capture'),
   btnStop: $('btn-stop'),
   btnRetry: $('btn-retry'),
+  btnLang: $('btn-lang'),
   btnPrint: $('btn-print'),
   btnPng: $('btn-png'),
+  btnShare: $('btn-share'),
   btnJson: $('btn-json'),
   btnCopy: $('btn-copy'),
   btnAgain: $('btn-again'),
@@ -59,6 +65,7 @@ const el = {
   qualityList: $('quality-list'),
   btnOverride: $('btn-override'),
   toast: $('toast'),
+  secureWarn: $('secure-warn'),
 };
 
 /* ------------------------------ 状态 ------------------------------ */
@@ -70,11 +77,19 @@ const state = {
   captures: [],
   recentBoxes: [],
   ctx: null,
-  overlayDraw: null,
   highRes: true,
 };
 
+let lang = getLang();
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const t = (key, vars) => L(lang, key, vars);
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function currentStep() {
+  for (const [k, node] of Object.entries(el.steps)) if (node.classList.contains('active')) return k;
+  return 'unknown';
+}
 
 function showStep(name) {
   for (const [k, node] of Object.entries(el.steps)) node.classList.toggle('active', k === name);
@@ -92,49 +107,13 @@ function toast(msg, ms = 2600) {
 /* ======================================================================
    摄像头
    ====================================================================== */
-const ERRORS = {
-  NotAllowedError: {
-    title: '摄像头权限被拒绝',
-    desc: '浏览器阻止了摄像头访问。本网站需要摄像头权限才能进行皮肤分析，视频画面只在本机处理，不会上传。',
-    hint: [
-      '点击浏览器地址栏左侧的锁形 / 摄像头图标，把"摄像头"改为"允许"',
-      '刷新页面后重新点击"开始检测"',
-      '如果之前点了"阻止"，浏览器会记住这个选择，必须手动改回',
-      '企业设备可能被系统策略禁止，请改用个人设备或联系管理员',
-    ],
-  },
-  NotFoundError: {
-    title: '没有检测到摄像头',
-    desc: '系统未找到可用的视频输入设备。',
-    hint: [
-      '确认设备有摄像头，且没有被物理遮挡或开关关闭',
-      '外接摄像头请检查 USB 连接',
-      '关闭远程桌面 / 虚拟机后重试',
-    ],
-  },
-  NotReadableError: {
-    title: '摄像头被占用',
-    desc: '摄像头已被其它程序（会议软件、直播工具、相机应用）独占。',
-    hint: ['关闭腾讯会议 / Zoom / OBS / 相机等正在使用摄像头的程序', '稍等几秒后点击"重试"'],
-  },
-  OverconstrainedError: {
-    title: '摄像头不支持所需分辨率',
-    desc: '设备无法提供请求的视频参数。',
-    hint: ['点击"重试"，我们会自动降级到更宽松的参数'],
-  },
-  SecurityError: {
-    title: '当前环境不允许访问摄像头',
-    desc: '浏览器只允许在安全上下文中使用摄像头。',
-    hint: [
-      '请通过 http://localhost 或 https:// 打开本页面，不要用 file:// 直接打开',
-      '本项目自带本地服务器：在项目目录执行 node serve.mjs',
-    ],
-  },
-  UnsupportedError: {
-    title: '浏览器不支持摄像头接口',
-    desc: '当前浏览器没有提供 getUserMedia API。',
-    hint: ['请使用较新版本的 Chrome、Edge、Firefox 或 Safari', 'iOS 上必须使用 Safari，第三方浏览器内核可能不支持'],
-  },
+const ERROR_KEYS = {
+  NotAllowedError: ['err.notAllowedTitle', 'err.notAllowedDesc', 'err.notAllowedHint'],
+  NotFoundError: ['err.notFoundTitle', 'err.notFoundDesc', 'err.notFoundHint'],
+  NotReadableError: ['err.notReadableTitle', 'err.notReadableDesc', 'err.notReadableHint'],
+  OverconstrainedError: ['err.overconstrainedTitle', 'err.overconstrainedDesc', 'err.overconstrainedHint'],
+  SecurityError: ['err.securityTitle', 'err.securityDesc', 'err.securityHint'],
+  UnsupportedError: ['err.unsupportedTitle', 'err.unsupportedDesc', 'err.unsupportedHint'],
 };
 
 async function startCamera() {
@@ -188,7 +167,7 @@ function stopCamera() {
   clearInterval(state.liveTimer);
   state.liveTimer = null;
   if (state.stream) {
-    for (const t of state.stream.getTracks()) t.stop();
+    for (const tr of state.stream.getTracks()) tr.stop();
     state.stream = null;
   }
   el.video.srcObject = null;
@@ -216,38 +195,35 @@ function liveTick() {
     return;
   }
 
-  const vw = el.video.videoWidth;
-  const vh = el.video.videoHeight;
-
   // 人脸
-  setStatus('face', res.ok ? 'pass' : 'fail', res.ok ? '已检测到' : '未检测到');
+  setStatus('face', res.ok ? 'pass' : 'fail', res.ok ? t('cam.faceYes') : t('cam.faceNo'));
 
   // 光线
   const lum = res.lum;
-  if (lum < 55) setStatus('light', 'warn', '偏暗');
-  else if (lum > 208) setStatus('light', 'warn', '偏亮');
-  else setStatus('light', 'pass', '良好');
+  if (lum < 55) setStatus('light', 'warn', t('cam.lightLow'));
+  else if (lum > 208) setStatus('light', 'warn', t('cam.lightHigh'));
+  else setStatus('light', 'pass', t('cam.lightOk'));
 
   // 距离
   let sizeState = 'fail';
-  let sizeText = '太远';
+  let sizeText = t('cam.sizeTooFar');
   if (res.ok) {
     const ratio = (res.box.x1 - res.box.x0) / lw;
     if (ratio >= 0.3) {
       sizeState = 'pass';
-      sizeText = '合适';
+      sizeText = t('cam.sizeOk');
     } else if (ratio >= 0.2) {
       sizeState = 'warn';
-      sizeText = '稍远';
+      sizeText = t('cam.sizeFar');
     }
     el.guideFrame.classList.toggle('ok', ratio >= 0.3);
   } else {
-    sizeText = '—';
+    sizeText = t('cam.na');
     el.guideFrame.classList.remove('ok');
   }
   setStatus('size', sizeState, sizeText);
 
-  // 稳定性（最近若干帧包围盒抖动）
+  // 稳定性
   if (res.ok) {
     state.recentBoxes.push({ x: (res.box.x0 + res.box.x1) / 2, w: res.box.x1 - res.box.x0 });
     if (state.recentBoxes.length > 5) state.recentBoxes.shift();
@@ -260,11 +236,11 @@ function liveTick() {
     const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mu) ** 2, 0) / xs.length);
     const w = state.recentBoxes[state.recentBoxes.length - 1].w || 1;
     const jitter = sd / w;
-    if (jitter < 0.025) setStatus('still', 'pass', '稳定');
-    else if (jitter < 0.06) setStatus('still', 'warn', '轻微晃动');
-    else setStatus('still', 'fail', '请保持不动');
+    if (jitter < 0.025) setStatus('still', 'pass', t('cam.stillOk'));
+    else if (jitter < 0.06) setStatus('still', 'warn', t('cam.stillWarn'));
+    else setStatus('still', 'fail', t('cam.stillBad'));
   } else {
-    setStatus('still', '', '—');
+    setStatus('still', '', t('cam.na'));
   }
 
   // 覆盖层：人脸框
@@ -279,8 +255,7 @@ function liveTick() {
     og.setLineDash([7, 5]);
     og.strokeRect(b.x0 * sx, b.y0 * sy, (b.x1 - b.x0) * sx, (b.y1 - b.y0) * sy);
     og.setLineDash([]);
-    // 四角
-    const L = Math.min(22, (b.x1 - b.x0) * sx * 0.2);
+    const Lc = Math.min(22, (b.x1 - b.x0) * sx * 0.2);
     og.lineWidth = 3;
     const corners = [
       [b.x0 * sx, b.y0 * sy, 1, 1],
@@ -290,14 +265,12 @@ function liveTick() {
     ];
     for (const [x, y, dx, dy] of corners) {
       og.beginPath();
-      og.moveTo(x + dx * L, y);
+      og.moveTo(x + dx * Lc, y);
       og.lineTo(x, y);
-      og.lineTo(x, y + dy * L);
+      og.lineTo(x, y + dy * Lc);
       og.stroke();
     }
   }
-  void vw;
-  void vh;
 }
 
 function setStatus(key, level, text) {
@@ -352,8 +325,8 @@ async function runScan() {
   el.btnCapture.disabled = true;
   el.qualityPanel.style.display = 'none';
   showStep('analyzing');
-  el.progressTitle.textContent = '正在采集画面';
-  setProgress(0.02, '请保持不动，大约需要 5 秒');
+  el.progressTitle.textContent = t('analyzing.capture');
+  setProgress(0.02, t('cam.countdownHint'));
 
   try {
     /* ---- 倒计时 ---- */
@@ -366,7 +339,7 @@ async function runScan() {
     /* ---- 采集 3 帧 ---- */
     state.captures = [];
     for (let i = 0; i < 3; i++) {
-      setProgress(0.1 + i * 0.12, `采集第 ${i + 1} / 3 帧`);
+      setProgress(0.1 + i * 0.12, t('analyzing.captureFrame', { a: i + 1, b: 3 }));
       await sleep(60);
       flash();
       state.captures.push(captureFrame());
@@ -384,15 +357,18 @@ async function runScan() {
 
 /** 分析已采集的帧并生成报告（采集与分析分离，便于测试与"强制生成"复用） */
 async function analyzeCaptures() {
-  el.progressTitle.textContent = '正在分析皮肤特征';
+  el.progressTitle.textContent = t('analyzing.scan');
   const results = [];
   for (let i = 0; i < state.captures.length; i++) {
-    setProgress(0.5 + (i * 0.45) / state.captures.length, `分析第 ${i + 1} / ${state.captures.length} 帧（泛红 · 油光 · 纹理 · 色斑 · 纹路）`);
+    setProgress(
+      0.5 + (i * 0.45) / state.captures.length,
+      t('analyzing.frame', { a: i + 1, b: state.captures.length }),
+    );
     await sleep(40);
     results.push(analyzeFrame(state.captures[i]));
   }
 
-  setProgress(0.97, '汇总评分与护理建议');
+  setProgress(0.97, t('analyzing.final'));
   await sleep(40);
 
   const valid = results.filter((r) => r.ok);
@@ -406,7 +382,7 @@ async function analyzeCaptures() {
   const agg = aggregateFrames(results);
   const jitter = boxJitter(results);
   if (jitter > 0.1) {
-    agg.quality.warnings.push({ code: 'shake', text: '检测到画面晃动较大，部分指标可能存在偏差，建议重新拍摄' });
+    agg.quality.warnings.push({ code: 'shake', text: t('quality.shake') });
   }
 
   if (agg.quality.blockers.length) {
@@ -414,29 +390,25 @@ async function analyzeCaptures() {
     el.btnCapture.disabled = false;
     showStep('camera');
     el.qualityPanel.style.display = '';
-    el.qualityList.innerHTML = agg.quality.blockers.map((b) => `<li>${b.text}</li>`).join('');
-    toast('采样质量不达标，请按提示调整后重试');
+    el.qualityList.innerHTML = agg.quality.blockers
+      .map((b) => `<li>${escHtml(L(lang, `quality.${b.code}`) || b.text)}</li>`)
+      .join('');
+    toast(t('fail.qualityToast'));
     return;
   }
 
   buildReport(agg, results);
-  setProgress(1, '完成');
+  setProgress(1, t('analyzing.done'));
   showStep('report');
   state.busy = false;
   el.btnCapture.disabled = false;
 }
 
 function showFailure(reason) {
-  const map = {
-    no_face: '未能识别到人脸区域。请正对镜头、露出完整面部，并避免背景中出现大面积与肤色相近的物体。',
-    face_too_small: '人脸在画面中太小，请靠近摄像头后重试。',
-    face_occluded: '面部被头发、口罩、手或镜框遮挡过多，请调整后重试。',
-    invalid_frame: '画面数据无效，请刷新页面后重试。',
-  };
   showStep('camera');
   el.qualityPanel.style.display = '';
-  el.qualityList.innerHTML = `<li>${map[reason] || '画面无法分析，请调整姿势与光线后重试。'}</li>`;
-  toast('本次采集未能完成分析');
+  el.qualityList.innerHTML = `<li>${escHtml(L(lang, `fail.${reason}`) || t('fail.default'))}</li>`;
+  toast(t('fail.toast'));
 }
 
 /* ======================================================================
@@ -446,27 +418,35 @@ function buildReport(agg, results) {
   const baseIdx = Math.max(0, results.findIndex((r) => r.ok));
   const metrics = agg.metrics;
   const scores = scoreAll(metrics);
-  const skinType = classifySkinType(metrics, scores);
-  const advice = buildAdvice(metrics, scores, skinType, agg.tone);
-  const rows = detailRows(metrics, agg.tone, scores);
   const timestamp = Date.now();
+
+  // 关键指标（百分比），供"与上次对比"使用
+  const keyPct = {
+    redness: +(metrics.rednessRatio * 100).toFixed(2),
+    blemish: +(metrics.blemishRatio * 100).toFixed(2),
+    shine: +(metrics.shineRatio * 100).toFixed(2),
+    spot: +(metrics.spotRatio * 100).toFixed(2),
+    pore: +(metrics.poreDensity * 100).toFixed(2),
+    line: +(metrics.lineDensityForehead * 100).toFixed(2),
+  };
+
+  const skinTypeForRecord = classifySkinType(metrics, scores, lang);
+  const recordCtx = { result: agg, scores, tone: agg.tone, timestamp, skinType: skinTypeForRecord };
+  const history = pushHistory(makeRecord(recordCtx));
 
   const ctx = {
     result: agg,
     scores,
-    skinType,
-    advice,
-    rows,
     tone: agg.tone,
     timestamp,
     capture: { imageData: state.captures[baseIdx] || state.captures[0] },
+    history,
+    prev: history.length > 1 ? history[history.length - 2] : null,
+    keyPct,
   };
-
-  const history = pushHistory(makeRecord(ctx));
-  ctx.history = history;
   state.ctx = ctx;
 
-  renderReport(el.reportRoot, ctx);
+  renderReport(el.reportRoot, ctx, lang);
   el.btnPng.disabled = false;
 }
 
@@ -474,14 +454,14 @@ function buildReport(agg, results) {
    错误界面
    ====================================================================== */
 function showError(err, extra) {
-  const info = ERRORS[err.name] || {
-    title: '无法启动摄像头',
-    desc: extra || '发生未知错误，请刷新页面后重试。',
-    hint: ['刷新页面重试', '确认浏览器为最新版本', '尝试使用 Chrome 或 Edge'],
-  };
-  el.errorTitle.textContent = info.title;
-  el.errorDesc.textContent = info.desc;
-  el.errorHint.innerHTML = `<b>可以尝试：</b><ol>${info.hint.map((h) => `<li>${h}</li>`).join('')}</ol>`;
+  const keys = ERROR_KEYS[err.name] || ['err.defaultTitle', 'err.defaultDesc', 'err.defaultHint'];
+  el.errorTitle.textContent = t(keys[0]);
+  el.errorDesc.textContent = extra || t(keys[1]);
+  const hints = L(lang, keys[2]);
+  const hintList = Array.isArray(hints) ? hints : [hints];
+  el.errorHint.innerHTML = `<b>${t('err.hintLabel')}</b><ol>${hintList
+    .map((h) => `<li>${escHtml(h)}</li>`)
+    .join('')}</ol>`;
   showStep('error');
 }
 
@@ -532,24 +512,31 @@ el.btnPng.addEventListener('click', () => {
   const canvas = el.reportRoot.querySelector('#evidence');
   if (!canvas || !state.ctx) return;
   exportPhoto(canvas, state.ctx.timestamp);
-  toast('已导出标注图（当前图层）');
+  toast(t('actions.toastPng'));
+});
+
+el.btnShare.addEventListener('click', async () => {
+  if (!state.ctx) return;
+  const result = await shareCard(state.ctx, lang);
+  if (result === 'failed') toast(t('actions.toastShareFail'));
+  else if (result !== 'cancelled') toast(t('actions.toastShareReady'));
 });
 
 el.btnJson.addEventListener('click', () => {
   if (!state.ctx) return;
-  exportJSON(state.ctx);
-  toast('已导出完整数据 JSON');
+  exportJSON(state.ctx, lang);
+  toast(t('actions.toastJson'));
 });
 
 el.btnCopy.addEventListener('click', async () => {
   if (!state.ctx) return;
-  const text = summaryText(state.ctx);
+  const text = summaryText(state.ctx, lang);
   try {
     await navigator.clipboard.writeText(text);
-    toast('报告摘要已复制到剪贴板');
+    toast(t('actions.toastCopy'));
   } catch {
-    downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), '皮肤报告摘要.txt');
-    toast('剪贴板不可用，已改为下载文本文件');
+    downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'skin-report-summary.txt');
+    toast(t('actions.toastCopyFallback'));
   }
 });
 
@@ -557,9 +544,10 @@ el.btnClear.addEventListener('click', () => {
   clearHistory();
   if (state.ctx) {
     state.ctx.history = [];
-    renderReport(el.reportRoot, state.ctx);
+    state.ctx.prev = null;
+    renderReport(el.reportRoot, state.ctx, lang);
   }
-  toast('本机历史记录已清除');
+  toast(t('actions.toastClear'));
 });
 
 el.btnOverride.addEventListener('click', async () => {
@@ -567,7 +555,7 @@ el.btnOverride.addEventListener('click', async () => {
   if (!state.captures.length) return;
   el.qualityPanel.style.display = 'none';
   showStep('analyzing');
-  setProgress(0.6, '按当前画面生成报告…');
+  setProgress(0.6, t('analyzing.forced'));
   await sleep(50);
   const results = state.captures.map(analyzeFrame);
   const agg = aggregateFrames(results);
@@ -575,13 +563,24 @@ el.btnOverride.addEventListener('click', async () => {
     showFailure('no_face');
     return;
   }
-  agg.quality.warnings.unshift({ code: 'forced', text: '本次为质量不达标情况下强制生成，数据仅供参考' });
+  agg.quality.warnings.unshift({ code: 'forced', text: t('quality.forced') });
   buildReport(agg, results);
   showStep('report');
 });
 
+el.btnLang.addEventListener('click', () => {
+  lang = lang === 'zh' ? 'en' : 'zh';
+  setLang(lang);
+  applyStaticLang(lang);
+  el.btnLang.textContent = L(lang, 'app.langSwitch');
+  if (state.ctx && currentStep() === 'report') {
+    renderReport(el.reportRoot, state.ctx, lang);
+  }
+  toast(t('actions.toastLang', { lang: lang === 'zh' ? '中文' : 'English' }));
+});
+
 window.addEventListener('resize', () => {
-  if (state.ctx) redrawRadar(el.reportRoot, state.ctx.scores.dimensions);
+  if (state.ctx) redrawRadar(el.reportRoot, state.ctx.scores.dimensions, lang);
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -595,33 +594,21 @@ document.addEventListener('visibilitychange', () => {
 
 window.addEventListener('beforeunload', stopCamera);
 
-/* 首次进入：若已有历史记录，在欢迎页给出提示 */
-(function init() {
-  const h = loadHistory();
-  const note = $('history-note');
-  if (note && h.length) {
-    note.textContent = `本机已保存 ${h.length} 次检测记录，最新一次：${new Date(
-      h[h.length - 1].ts,
-    ).toLocaleString('zh-CN', { hour12: false })}`;
-  }
-  if (!window.isSecureContext) {
-    const warn = $('secure-warn');
-    if (warn) warn.style.display = '';
-  }
-})();
-
 /* ======================================================================
    端到端测试钩子（无头浏览器用）
-   ---------------------------------------------------------------------
-   访问 index.html?autotest=1 时自动走完 授权 → 采集 → 分析 → 报告 全流程，
-   并把状态写到 window.__E2E__，供 CDP 脚本轮询。
-   若环境没有摄像头（例如无头浏览器未配置虚拟摄像头），则退化为
-   使用内存中合成的一帧画面，用于验证"分析 + 报告渲染"链路。
    ====================================================================== */
 if (new URLSearchParams(location.search).has('autotest')) {
   window.__E2E__ = { state: 'starting', step: 'welcome' };
-  const mark = (state, extra) => {
-    window.__E2E__ = { state, step: currentStep(), ...extra };
+  window.__makeShareCard = async () => {
+    if (!state.ctx) return null;
+    const c = await buildShareCard(state.ctx, lang);
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let non = 0;
+    for (let i = 0; i < d.length; i += 4 * 317) if (d[i] + d[i + 1] + d[i + 2] > 30) non++;
+    return { w: c.width, h: c.height, nonBlank: non };
+  };
+  const mark = (stateName, extra) => {
+    window.__E2E__ = { state: stateName, step: currentStep(), ...extra };
   };
   (async () => {
     try {
@@ -631,7 +618,6 @@ if (new URLSearchParams(location.search).has('autotest')) {
         mark('scanning-camera');
         await runScan();
       } catch (camErr) {
-        // 无摄像头回退：合成一帧有脸的图像，直接验证分析与报告
         window.__E2E__.cameraError = String((camErr && camErr.name) || camErr);
         mark('scanning-synthetic');
         state.captures = [syntheticFrame()];
@@ -643,11 +629,6 @@ if (new URLSearchParams(location.search).has('autotest')) {
       mark('error', { message: String((e && e.stack) || e) });
     }
   })();
-}
-
-function currentStep() {
-  for (const [k, node] of Object.entries(el.steps)) if (node.classList.contains('active')) return k;
-  return 'unknown';
 }
 
 /** 在内存中合成一帧带人脸的图像（仅用于端到端测试回退） */
@@ -701,3 +682,26 @@ function syntheticFrame() {
   }
   return img;
 }
+
+/* 首次进入 */
+(function init() {
+  lang = getLang();
+  applyStaticLang(lang);
+  el.btnLang.textContent = L(lang, 'app.langSwitch');
+
+  const h = loadHistory();
+  const note = $('history-note');
+  if (note && h.length) {
+    note.textContent = t('welcome.historyNote', {
+      n: h.length,
+      t: new Date(h[h.length - 1].ts).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false }),
+    });
+  }
+  if (!window.isSecureContext) {
+    el.secureWarn.style.display = '';
+    el.secureWarn.querySelector('div').innerHTML = L(lang, 'welcome.secureWarn').replace(
+      '{install}',
+      `<a href="/install" style="color:#9dc9ff"><b>${L(lang, 'welcome.secureWarnInstall')}</b></a>`,
+    );
+  }
+})();
