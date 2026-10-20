@@ -6,7 +6,7 @@
  * renderReport(root, ctx, lang) 会按当前语言重建所有文案。
  */
 
-import { L } from './i18n.js';
+import { L, EXTRA, localeOf } from './i18n.js';
 import {
   DIMENSIONS,
   gradeOf,
@@ -15,6 +15,7 @@ import {
   detailRows,
   lifestyleTips,
   dimensionLabel,
+  dimensionDesc,
 } from './scoring.js';
 
 /* ------------------------------ 图标 ------------------------------ */
@@ -58,11 +59,14 @@ export function scoreColor(score) {
   return '#f87171';
 }
 
-/* 报告页局部文案（历史表头、分区名等） */
+/* 报告页局部文案（历史表头、分区名等），额外语言由 lang/*.js 合并 */
 const RTXT = {
   zh: { histTime: '时间', histOverall: '综合', histDelta: '较上次', pxUnit: '像素' },
   en: { histTime: 'Time', histOverall: 'Overall', histDelta: 'Delta', pxUnit: 'px' },
 };
+for (const [code, mod] of Object.entries(EXTRA)) {
+  RTXT[code] = mod.table;
+}
 
 const ROI_LABELS = {
   zh: {
@@ -100,6 +104,9 @@ const ROI_LABELS = {
     nasolabialRight: 'Right fold',
   },
 };
+for (const [code, mod] of Object.entries(EXTRA)) {
+  ROI_LABELS[code] = mod.roi;
+}
 
 const LAYER_KEYS = [
   ['roi', [255, 255, 255]],
@@ -155,7 +162,7 @@ export function renderReport(root, ctx, lang = 'zh') {
           <span class="pill">${lang === 'en' ? 'Tone' : '肤色'} · ${esc(tone.name)}</span>
         </div>
         <div class="meta">
-          <span>${t('report.time')} <b>${new Date(timestamp).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false })}</b></span>
+          <span>${t('report.time')} <b>${new Date(timestamp).toLocaleString(localeOf(lang), { hour12: false })}</b></span>
           <span>${t('report.frames')} <b>${result.frames || 1} ${t('report.frameUnit')}</b></span>
           <span>${t('report.quality')} <b>${result.quality.score.toFixed(0)} / 100</b></span>
           <span>${t('report.coverage')} <b>${(m.skinCoverage * 100).toFixed(1)}%</b></span>
@@ -301,7 +308,7 @@ function renderCompare(ctx, lang) {
       <div class="section-head">
         <h3><span class="num">★</span>${t('compare.title')}</h3>
         <p>${t('compare.sub', {
-          t: new Date(prev.ts).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false }),
+          t: new Date(prev.ts).toLocaleString(localeOf(lang), { hour12: false }),
           d: diffText,
         })}</p>
       </div>
@@ -553,31 +560,6 @@ function renderLegend(el, dims, lang) {
       <span class="n" style="color:${scoreColor(dims[d.key])}">${dims[d.key].toFixed(0)}</span>
     </div>`,
   ).join('');
-}
-
-/** 维度描述文案 */
-function dimensionDesc(key, lang) {
-  const descs = {
-    zh: {
-      calmness: '泛红、炎症、痘印等刺激信号',
-      oilBalance: '皮脂分泌与干燥缺水倾向',
-      smoothness: '皮肤纹理、毛孔与粗糙程度',
-      evenness: '色斑、色素沉积与肤色一致度',
-      firmness: '细纹、干纹与纹路深度',
-      radiance: '暗沉、发黄与通透感',
-      eye: '下眼睑与颧颊的亮度差',
-    },
-    en: {
-      calmness: 'Redness, irritation and blemish signals',
-      oilBalance: 'Sebum production and dryness tendency',
-      smoothness: 'Skin texture, pores and roughness',
-      evenness: 'Dark spots, pigmentation and tone uniformity',
-      firmness: 'Fine lines and wrinkle depth',
-      radiance: 'Dullness, sallowness and glow',
-      eye: 'Lightness difference between lower eyelid and cheek',
-    },
-  };
-  return (descs[lang === 'en' ? 'en' : 'zh'] || descs.zh)[key] || key;
 }
 
 function renderDimCards(el, scores, m, lang) {
@@ -848,7 +830,7 @@ function renderSpark(canvas, history, lang) {
                 ? `<td style="color:${scoreColor(h.dimensions[k])}">${h.dimensions[k].toFixed(0)}</td>`
                 : '<td>—</td>';
             return `<tr>
-              <td>${new Date(h.ts).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+              <td>${new Date(h.ts).toLocaleString(localeOf(lang), { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
               <td style="color:${scoreColor(h.overall)};font-weight:700">${h.overall.toFixed(1)}</td>
               <td class="delta ${cls}">${txt}</td>
               ${dim('calmness')}${dim('oilBalance')}${dim('smoothness')}${dim('evenness')}${dim('firmness')}${dim('radiance')}
@@ -922,7 +904,7 @@ export function summaryText(ctx, lang = 'zh') {
   const advice = buildAdvice(m, ctx.scores, skinType, ctx.tone, lang);
   const L0 = [];
   L0.push(lang === 'en' ? '[Facial Skin Health Report]' : '【面部皮肤健康报告】');
-  L0.push(`${lang === 'en' ? 'Time' : '时间'}：${new Date(ctx.timestamp).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false })}`);
+  L0.push(`${lang === 'en' ? 'Time' : '时间'}：${new Date(ctx.timestamp).toLocaleString(localeOf(lang), { hour12: false })}`);
   L0.push(`${lang === 'en' ? 'Overall' : '综合评分'}：${ctx.scores.overall.toFixed(1)} / 100（${gradeOf(ctx.scores.overall, lang).label}）`);
   L0.push(`${lang === 'en' ? 'Skin type' : '肤质判定'}：${skinType.type}　${lang === 'en' ? 'Tone' : '肤色'}：${ctx.tone.name}`);
   L0.push('');
